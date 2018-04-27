@@ -1,0 +1,119 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+#Instructions https://benjjneb.github.io/dada2/dada-installation.html
+#Install dependancies for DADA2
+
+source("http://bioconductor.org/biocLite.R")
+biocLite(suppressUpdates = FALSE)
+biocLite("ShortRead", suppressUpdates = FALSE)
+
+biocLite("devtools")
+library("devtools")
+devtools::install_github("benjjneb/dada2")
+##^Installation failed with this code
+
+install.packages("/Users/urenlab/Downloads/dada2-1.6.tar.gz",
+                 repos = NULL,
+                 type = "source",
+                 dependencies = c("Depends", "Suggests","Imports"))
+##^Installation failed using this code too. Error is nonzero exit file
+
+install.packages("devtools")
+library("devtools")
+devtools::install_github("benjjneb/dada2")
+#^This failed too. discussion thread on dada2 GitHub cuts off before a solutions is noted.
+
+##vThank god for StackOverflow! USE THIS TO INSTALL
+source("https://bioconductor.org/biocLite.R")
+biocLite("dada2")
+
+##vThis dependancy is required for dada2 to load
+source("https://bioconductor.org/biocLite.R")
+biocLite("GenomeInfoDbData")
+
+packageVersion("dada2")
+library(dada2)
+help(package="dada2")
+?derepFastq
+?dada
+
+install.packages("/Users/urenlab/Downloads/dada2-1.6.tar.gz",
+                 repos = NULL,
+                 type = "source",
+                 dependencies = c("Depends", "Suggests","Imports"))
+
+library(dada2)
+```
+
+```{r}
+#Ok, now let's go through the tutorial to get a feel for the package, then can start on the plate data.
+
+path<-"~/Downloads/MiSeq_SOP"
+list.files(path)
+
+#missing "filtered" and "test" per the tutorial. We'll see if this causes issues downstream.
+
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_R1_001.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_R2_001.fastq", full.names = TRUE))
+
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+
+plotQualityProfile(fnFs[1:2])
+plotQualityProfile(fnRs[1:2])
+
+head(sample.names)
+
+#The reverse reads are of significantly worse quality, especially at the end, which is common in Illumina sequencing. This isn’t too worrisome, as DADA2 incorporates quality information into its error model which makes the algorithm robust to lower quality sequence, but trimming as the average qualities crash will improve the algorithm’s sensitivity to rare sequence variants. Based on these profiles, we will truncate the reverse reads at position 160 where the quality distribution crashes.
+
+filt_path <- file.path(path, "filtered") # Place filtered files in filtered/ subdirectory
+filtFs <- file.path(filt_path, paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(filt_path, paste0(sample.names, "_R_filt.fastq.gz"))
+
+#use standard filter parameters (can be adjusted... not set in stone; if too few reads pass the filter, relax maxEE; for paired end reads adjust truncLen so that they overlap after truncation in order to merge later)
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,160),
+              maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+              compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+#^^This step may take a few minutes
+
+head(out)
+
+##Explore the error rates
+#Forward reads
+errF <- learnErrors(filtFs, multithread=TRUE)
+#Reverse reads
+
+errR <- learnErrors(filtRs, multithread=TRUE)
+
+#visualize estimted error rates
+plotErrors(errF, nominalQ=TRUE)
+
+#Parameter learning is computationally intensive, so by default the learnErrors function uses only a subset of the data (the first 1M reads). If the plotted error model does not look like a good fit, try increasing the nreads parameter to see if the fit improves.
+ 
+#Dereplicate
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+# Name the derep-class objects by the sample names
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+```
+
+```{r}
+# Use this to transfer hpc file to read through R
+#https://docs.hpc.arizona.edu/display/UAHPC/Transferring+Files
+```
+
+```{python}
+
+##vv Bash script for running the demultiplexing python program
+
+urenlab$ paired_read_separator.py -o ~/Desktop/Youngerman_LEO_2018/plate2/split ~/Desktop/Youngerman_LEO_2018/plate2/unzipped/*
+```
+
